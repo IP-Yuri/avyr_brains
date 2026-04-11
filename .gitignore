@@ -1,0 +1,21 @@
+# Environments
+.env
+.rnv
+.env.*
+venv/
+env/
+.venv/
+
+# SQLite databases
+*.db
+*.sqlite3
+avyr_leads.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE and OS
+.vscode/
+.DS_Store
