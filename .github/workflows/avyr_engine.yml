@@ -1,0 +1,40 @@
+name: AVYR Dispatch Engine Schedule
+
+on:
+  schedule:
+    # Runs at 07:00 UTC every morning (perfect for having leads ready over coffee)
+    - cron: '0 7 * * *'
+  workflow_dispatch: # This line allows you to click a "Run Now" button manually
+
+jobs:
+  run-avyr-engine:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10' # Adjust if you used a different version
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Scraper (app.py)
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }} # If you used Apify
+        run: python app.py
+
+      - name: Run AI Brain (avyr_brain.py)
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }} # Or GEMINI_API_KEY
+        run: python avyr_brain.py
