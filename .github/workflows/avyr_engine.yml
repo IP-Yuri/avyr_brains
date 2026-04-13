@@ -2,9 +2,9 @@ name: AVYR Dispatch Engine Schedule
 
 on:
   schedule:
-    # Runs at 07:00 UTC every morning (perfect for having leads ready over coffee)
+    # Runs at 07:00 UTC every morning
     - cron: '0 7 * * *'
-  workflow_dispatch: # This line allows you to click a "Run Now" button manually
+  workflow_dispatch: # Allows you to click a "Run Now" button to test it
 
 jobs:
   run-avyr-engine:
@@ -17,7 +17,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10' # Adjust if you used a different version
+          python-version: '3.10' 
 
       - name: Install Dependencies
         run: |
@@ -28,7 +28,8 @@ jobs:
         env:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
-          APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }} # If you used Apify
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }} 
+          PAGESPEED_API_KEY: ${{ secrets.PAGESPEED_API_KEY }}
         run: python app.py
 
       - name: Run AI Brain (avyr_brain.py)
@@ -36,5 +37,6 @@ jobs:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
           NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }} # Or GEMINI_API_KEY
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} 
         run: python avyr_brain.py
