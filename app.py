@@ -11,7 +11,7 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 import re
-import sqlite3
+import libsql_client
 import time
 from datetime import datetime
 from urllib.parse import urlparse
@@ -49,16 +49,14 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "avyr_leads.d
 # DATABASE HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def init_db() -> sqlite3.Connection:
+def init_db():
     """
-    Open (or create) the local SQLite database and ensure the
+    Open the remote Turso database and ensure the
     target_leads and benchmark_leads tables exist.
-
-    Returns
-    -------
-    sqlite3.Connection
     """
-    conn = sqlite3.connect(DB_PATH)
+    url = os.environ.get("TURSO_DATABASE_URL")
+    auth_token = os.environ.get("TURSO_AUTH_TOKEN")
+    client = libsql_client.create_client_sync(url=url, auth_token=auth_token)
 
     _schema = """
         Business_Name TEXT,
@@ -73,19 +71,18 @@ def init_db() -> sqlite3.Connection:
         Date_Added    TEXT
     """
 
-    conn.execute(f"CREATE TABLE IF NOT EXISTS target_leads ({_schema})")
-    conn.execute(f"CREATE TABLE IF NOT EXISTS benchmark_leads ({_schema})")
+    client.execute(f"CREATE TABLE IF NOT EXISTS target_leads ({_schema})")
+    client.execute(f"CREATE TABLE IF NOT EXISTS benchmark_leads ({_schema})")
     
     # Gracefully add new columns to existing tables
     for table in ["target_leads", "benchmark_leads"]:
         for col in ["Email", "Instagram_URL", "Digital_Status"]:
             try:
-                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
-            except sqlite3.OperationalError:
-                pass # Column already exists
+                client.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+            except Exception:
+                pass
 
-    conn.commit()
-    return conn
+    return client
 
 
 def _parse_lcp_float(val: str) -> float | None:
@@ -98,7 +95,7 @@ def _parse_lcp_float(val: str) -> float | None:
         return None
 
 
-def route_and_save(df: pd.DataFrame, conn: sqlite3.Connection) -> None:
+def route_and_save(df: pd.DataFrame, client) -> None:
     """
     Add a timestamp, then split the DataFrame into two tables:
 
@@ -114,16 +111,41 @@ def route_and_save(df: pd.DataFrame, conn: sqlite3.Connection) -> None:
     targets = df[(df["_lcp_f"].isna()) | (df["_lcp_f"] > LCP_THRESHOLD)].drop(columns="_lcp_f")
     benchmarks = df[(df["_lcp_f"].notna()) & (df["_lcp_f"] <= LCP_THRESHOLD)].drop(columns="_lcp_f")
 
-    if not targets.empty:
-        targets.to_sql("target_leads", conn, if_exists="append", index=False)
-    if not benchmarks.empty:
-        benchmarks.to_sql("benchmark_leads", conn, if_exists="append", index=False)
-    conn.commit()
+    def insert_df(table_name, target_df):
+        if target_df.empty:
+            return
+        columns = ", ".join(target_df.columns)
+        placeholders = ", ".join(["?"] * len(target_df.columns))
+        query = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
+        
+        statements = []
+        for row in target_df.itertuples(index=False, name=None):
+            args = []
+            for val in row:
+                if pd.isna(val):
+                    args.append(None)
+                elif type(val) in (int, float, str, bytes):
+                    args.append(val)
+                else:
+                    try:
+                        args.append(val.item())
+                    except AttributeError:
+                        args.append(str(val))
+            statements.append(libsql_client.Statement(query, args))
+        
+        if statements:
+            client.batch(statements)
+
+    insert_df("target_leads", targets)
+    insert_df("benchmark_leads", benchmarks)
 
 
-def load_leads(conn: sqlite3.Connection, table: str) -> pd.DataFrame:
+def load_leads(client, table: str) -> pd.DataFrame:
     """Return every row from the given table as a DataFrame."""
-    return pd.read_sql(f"SELECT * FROM {table} ORDER BY Date_Added DESC", conn)
+    result = client.execute(f"SELECT * FROM {table} ORDER BY Date_Added DESC")
+    columns = result.columns
+    rows = [list(r) for r in result.rows]
+    return pd.DataFrame(rows, columns=columns)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

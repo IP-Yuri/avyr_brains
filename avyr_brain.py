@@ -7,7 +7,7 @@ bespoke copy, and pushes the Lead to a Notion database.
 """
 
 import os
-import sqlite3
+import libsql_client
 import json
 import time
 
@@ -38,34 +38,38 @@ console = Console()
 # DATABASE OPERATIONS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def get_db_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+def get_db_connection():
+    url = os.environ.get("TURSO_DATABASE_URL")
+    auth_token = os.environ.get("TURSO_AUTH_TOKEN")
+    client = libsql_client.create_client_sync(url=url, auth_token=auth_token)
+    
     # Ensure Processed_By_Brain exists
     try:
-        conn.execute("ALTER TABLE target_leads ADD COLUMN Processed_By_Brain INTEGER DEFAULT 0")
-        conn.commit()
-    except sqlite3.OperationalError:
+        client.execute("ALTER TABLE target_leads ADD COLUMN Processed_By_Brain INTEGER DEFAULT 0")
+    except Exception:
         pass # Column likely exists
     try:
-        conn.execute("ALTER TABLE target_leads ADD COLUMN Drafted_IG_DM TEXT")
-        conn.commit()
-    except sqlite3.OperationalError:
+        client.execute("ALTER TABLE target_leads ADD COLUMN Drafted_IG_DM TEXT")
+    except Exception:
         pass # Column likely exists
-    return conn
+    return client
 
-def fetch_unprocessed_leads(conn: sqlite3.Connection, limit: int = 7) -> list:
-    cur = conn.cursor()
-    cur.execute(
+def fetch_unprocessed_leads(client, limit: int = 7) -> list:
+    result = client.execute(
         "SELECT rowid, * FROM target_leads WHERE Processed_By_Brain = 0 LIMIT ?", 
-        (limit,)
+        [limit]
     )
-    return cur.fetchall()
+    columns = result.columns
+    leads = []
+    for row in result.rows:
+        leads.append(dict(zip(columns, row)))
+    return leads
 
-def mark_lead_processed(conn: sqlite3.Connection, rowid: int, ig_dm: str = None):
-    cur = conn.cursor()
-    cur.execute("UPDATE target_leads SET Processed_By_Brain = 1, Drafted_IG_DM = ? WHERE rowid = ?", (ig_dm, rowid))
-    conn.commit()
+def mark_lead_processed(client, rowid: int, ig_dm: str = None):
+    client.execute(
+        "UPDATE target_leads SET Processed_By_Brain = 1, Drafted_IG_DM = ? WHERE rowid = ?", 
+        [ig_dm, rowid]
+    )
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # WEB SCRAPING
