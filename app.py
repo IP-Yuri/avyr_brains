@@ -816,12 +816,35 @@ def main():
                 )
 
     # ── Input ─────────────────────────────────────────────────────────────────
-    niche = st.text_input(
-        "Enter target niche (e.g., Promoteur immobilier)",
-        placeholder="Architecte d'intérieur",
-    )
+   is_cloud_run = os.environ.get("GITHUB_ACTIONS") == "true"
 
-    generate = st.button("⚡  Generate Leads")
+    if is_cloud_run:
+        # The 5-Day Premium Niche Roster
+        daily_niches = [
+            "Agence financière",       # Monday (Day 0)
+            "Promoteur immobilier",    # Tuesday (Day 1)
+            "Cabinet d'avocats",       # Wednesday (Day 2)
+            "Clinique esthétique",     # Thursday (Day 3)
+            "Architecte d'intérieur"   # Friday (Day 4)
+        ]
+        
+        # Figure out what day of the week it is (0 = Mon, 4 = Fri)
+        today = datetime.today().weekday()
+        
+        # Select the niche for today (Fallback to Monday if run on weekend)
+        if today <= 4:
+            niche = daily_niches[today]
+        else:
+            niche = daily_niches[0] 
+            
+        generate = True
+    else:
+        # SHOW BUTTON: Standard UI for your laptop
+        niche = st.text_input(
+            "Enter target niche (e.g., Promoteur immobilier)",
+            placeholder="Architecte d'intérieur",
+        )
+        generate = st.button("⚡  Generate Leads")
 
     # ── Pipeline ──────────────────────────────────────────────────────────────
     if generate:
