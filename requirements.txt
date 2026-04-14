@@ -9,3 +9,5 @@ rich>=13.0.0
 python-dotenv>=1.0.0
 libsql-client
 notion-client>=2.2.1
+matplotlib
+pandas
