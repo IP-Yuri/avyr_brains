@@ -7,5 +7,5 @@ duckduckgo-search>=5.3.0
 google-genai>=0.1.0
 rich>=13.0.0
 python-dotenv>=1.0.0
-libsql-experimental
+libsql-client
 notion-client>=2.2.1
