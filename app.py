@@ -814,9 +814,8 @@ def main():
                     use_container_width=True,
                     hide_index=True,
                 )
-
-    # ── Input ─────────────────────────────────────────────────────────────────
-   is_cloud_run = os.environ.get("GITHUB_ACTIONS") == "true"
+# ── Input ─────────────────────────────────────────────────────────────────
+    is_cloud_run = os.environ.get("GITHUB_ACTIONS") == "true"
 
     if is_cloud_run:
         # The 5-Day Premium Niche Roster
