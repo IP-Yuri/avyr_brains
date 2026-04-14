@@ -2,8 +2,8 @@ name: AVYR Dispatch Engine Schedule
 
 on:
   schedule:
-    # Runs at 07:00 UTC every morning
-    - cron: '0 7 * * *'
+    # Runs at 07:00 UTC, Monday through Friday ONLY
+    - cron: '0 7 * * 1-5'
   workflow_dispatch: # Allows you to click a "Run Now" button to test it
 
 jobs:
