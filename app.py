@@ -155,17 +155,6 @@ def load_leads(client, table: str) -> pd.DataFrame:
 def collect_leads(query: str) -> list[dict]:
     """
     Query SerpApi Google Maps and return a list of business records.
-
-    Parameters
-    ----------
-    query : str
-        Full search query including location suffix.
-
-    Returns
-    -------
-    list[dict]
-        Business records with keys:
-        Business_Name, Address, Rating, Reviews, Website
     """
     params = {
         "engine": "google_maps",
@@ -206,11 +195,6 @@ def clean_and_filter(records: list[dict]) -> pd.DataFrame:
     """
     Load records into a DataFrame, format websites,
     apply rating/review thresholds, and cap at MAX_LEADS rows.
-
-    Returns
-    -------
-    pd.DataFrame
-        Cleaned DataFrame with at most MAX_LEADS rows.
     """
     df = pd.DataFrame(records)
 
@@ -225,7 +209,7 @@ def clean_and_filter(records: list[dict]) -> pd.DataFrame:
     # Apply thresholds
     df = df[(df["Rating"] >= MIN_RATING) & (df["Reviews"] >= MIN_REVIEW_COUNT)]
 
-    # Cap at 5 leads
+    # Cap at MAX_LEADS
     df = df.head(MAX_LEADS)
     df.reset_index(drop=True, inplace=True)
     return df
@@ -234,11 +218,6 @@ def clean_and_filter(records: list[dict]) -> pd.DataFrame:
 def fetch_lcp(url: str) -> str:
     """
     Query Google PageSpeed Insights (desktop) for a single URL.
-
-    Returns
-    -------
-    str
-        LCP in seconds (e.g. "5.34 s") or "Failed".
     """
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
@@ -278,8 +257,6 @@ def inspect_digital_flaws(url: str) -> dict:
         url = "https://" + url
         
     try:
-        # We must disable warnings for unverified HTTPS if needed, 
-        # but better to just use standard requests and catch exceptions.
         import warnings
         warnings.filterwarnings('ignore', message='Unverified HTTPS request')
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -372,18 +349,19 @@ def extract_email(business_name: str, url: str) -> str | None:
             pass
             
     # Layer 2: OSINT DuckDuckGo Fallback
-    query = f'"{business_name}" "Casablanca" email OR contact "@"'
-    try:
-        from duckduckgo_search import DDGS
-        results = DDGS().text(query, max_results=5)
-        for r in results:
-            text = r.get("body", "") + " " + r.get("title", "")
-            emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text)
-            for e in emails:
-                if _is_valid(e):
-                    return e
-    except Exception:
-        pass
+    # MUZZLED FOR CLOUD STABILITY TO PREVENT 6 HOUR FREEZE
+    # query = f'"{business_name}" "Casablanca" email OR contact "@"'
+    # try:
+    #     from duckduckgo_search import DDGS
+    #     results = DDGS().text(query, max_results=5)
+    #     for r in results:
+    #         text = r.get("body", "") + " " + r.get("title", "")
+    #         emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text)
+    #         for e in emails:
+    #             if _is_valid(e):
+    #                 return e
+    # except Exception:
+    #     pass
         
     return "Not Found"
 
@@ -411,7 +389,7 @@ def find_instagram_only(business_name: str) -> str | None:
 def run_audit(df: pd.DataFrame, progress_bar, status_text) -> pd.DataFrame:
     """
     Iterate through leads, perform PageSpeed audit, inspect digital flaws, 
-    and identify ghost businesses. Updates the Streamlit progress bar.
+    and identify ghost businesses. 
     """
     total = len(df)
     scores: list[str] = []
@@ -421,20 +399,27 @@ def run_audit(df: pd.DataFrame, progress_bar, status_text) -> pd.DataFrame:
 
     for idx, (url, b_name) in enumerate(zip(df["Website"], df["Business_Name"])):
         display_url = url if url else "No Website"
+        
+        # X-RAY VISION FOR GITHUB LOGS
+        print(f"🔄 Auditing [{idx + 1}/{total}]: {b_name} ({display_url})")
         status_text.text(f"Auditing [{idx + 1}/{total}]: {b_name} ({display_url})")
         
         if url:
             # Full website audit
             score = fetch_lcp(url)
+            print(f"   -> PageSpeed Score: {score}")
+            
             flaw_data = inspect_digital_flaws(url)
             d_status = flaw_data["Digital_Status"]
             ig = flaw_data["Instagram_URL"]
         else:
             # Ghost Hunter: No website scenario
             score = "N/A"
+            print(f"   -> Ghost Business (No Website Found)")
             d_status = "IG_ONLY"
             ig = find_instagram_only(b_name)
             
+        print(f"   -> Extracting contact info...")
         status_text.text(f"Extracting contact info for {b_name}...")
         email = extract_email(b_name, url)
             
@@ -463,26 +448,7 @@ def generate_audit_chart(
     comp_names: list[str],
     comp_scores: list[float],
 ) -> plt.Figure:
-    """
-    Generate a dark-themed horizontal bar chart comparing a target
-    business's LCP against up to three competitors.
-
-    Parameters
-    ----------
-    target_name : str
-        Name of the target (slowest) business.
-    target_lcp : float
-        LCP score of the target (in seconds).
-    comp_names : list[str]
-        Names of the competitor businesses (1-3 items).
-    comp_scores : list[float]
-        LCP scores of the competitor businesses (same length as comp_names).
-
-    Returns
-    -------
-    matplotlib.figure.Figure
-    """
-    # Build bars bottom-to-top: competitors (reversed) then target on top
+    """Generate a dark-themed horizontal bar chart."""
     grey_palette = ["#F5F5F5", "#CCCCCC", "#A3A3A3"]
 
     labels = list(reversed(comp_names)) + [target_name]
@@ -497,22 +463,18 @@ def generate_audit_chart(
 
     bars = ax.barh(labels, values, color=colors, height=0.55, edgecolor="none")
 
-    # Remove all spines except left
     for spine in ["top", "right", "bottom"]:
         ax.spines[spine].set_visible(False)
     ax.spines["left"].set_color("#2A2A2A")
 
-    # Hide x-axis
     ax.xaxis.set_visible(False)
 
-    # Y-axis styling
     ax.tick_params(axis="y", colors="#FFFFFF", length=0)
     for label in ax.get_yticklabels():
         label.set_fontfamily("sans-serif")
         label.set_fontsize(11)
         label.set_fontweight("500")
 
-    # Data labels at the end of each bar
     max_val = max(values)
     for bar, val in zip(bars, values):
         ax.text(
@@ -527,9 +489,7 @@ def generate_audit_chart(
             fontfamily="sans-serif",
         )
 
-    # Add breathing room on the right for labels
     ax.set_xlim(0, max_val * 1.2)
-
     fig.tight_layout()
     return fig
 
@@ -543,181 +503,33 @@ def inject_custom_css():
     st.markdown(
         """
         <style>
-        /* ── Global dark overrides ────────────────────────────── */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
         html, body, [data-testid="stAppViewContainer"],
         [data-testid="stHeader"], [data-testid="stToolbar"] {
             background-color: #0a0a0f !important;
             color: #e0e0e8 !important;
             font-family: 'Inter', sans-serif !important;
         }
-
-        [data-testid="stSidebar"] {
-            background-color: #0e0e15 !important;
-        }
-
-        /* ── Brand header ─────────────────────────────────────── */
-        .brand-header {
-            text-align: center;
-            padding: 2.5rem 0 1rem;
-        }
-        .brand-header h1 {
-            font-family: 'Inter', sans-serif;
-            font-weight: 700;
-            font-size: 2rem;
-            letter-spacing: 0.25em;
-            color: #ffffff;
-            margin: 0;
-        }
-        .brand-header .accent {
-            color: #6c63ff;
-        }
-        .brand-header p {
-            font-weight: 300;
-            font-size: 0.85rem;
-            letter-spacing: 0.15em;
-            color: #6b6b80;
-            margin-top: 0.4rem;
-        }
-
-        /* ── Divider ──────────────────────────────────────────── */
-        .divider {
-            height: 1px;
-            background: linear-gradient(90deg, transparent, #6c63ff40, transparent);
-            margin: 1.5rem 0 2rem;
-        }
-
-        /* ── Input field ──────────────────────────────────────── */
-        [data-testid="stTextInput"] input {
-            background-color: #12121c !important;
-            border: 1px solid #1e1e30 !important;
-            border-radius: 8px !important;
-            color: #e0e0e8 !important;
-            font-family: 'Inter', sans-serif !important;
-            padding: 0.75rem 1rem !important;
-            font-size: 0.95rem !important;
-            transition: border-color 0.2s ease;
-        }
-        [data-testid="stTextInput"] input:focus {
-            border-color: #6c63ff !important;
-            box-shadow: 0 0 0 2px #6c63ff20 !important;
-        }
-        [data-testid="stTextInput"] label {
-            color: #8888a0 !important;
-            font-weight: 400 !important;
-            font-size: 0.82rem !important;
-            letter-spacing: 0.06em !important;
-        }
-
-        /* ── Buttons ──────────────────────────────────────────── */
-        [data-testid="stButton"] > button {
-            background: linear-gradient(135deg, #6c63ff, #4e47c9) !important;
-            color: #ffffff !important;
-            border: none !important;
-            border-radius: 8px !important;
-            padding: 0.65rem 2rem !important;
-            font-family: 'Inter', sans-serif !important;
-            font-weight: 600 !important;
-            font-size: 0.88rem !important;
-            letter-spacing: 0.1em !important;
-            cursor: pointer !important;
-            transition: all 0.25s ease !important;
-            width: 100% !important;
-        }
-        [data-testid="stButton"] > button:hover {
-            transform: translateY(-1px) !important;
-            box-shadow: 0 6px 24px #6c63ff30 !important;
-        }
-        [data-testid="stButton"] > button:active {
-            transform: translateY(0) !important;
-        }
-
-        /* ── Download button ──────────────────────────────────── */
-        [data-testid="stDownloadButton"] > button {
-            background: transparent !important;
-            color: #6c63ff !important;
-            border: 1px solid #6c63ff50 !important;
-            border-radius: 8px !important;
-            font-family: 'Inter', sans-serif !important;
-            font-weight: 500 !important;
-            letter-spacing: 0.08em !important;
-            transition: all 0.25s ease !important;
-            width: 100% !important;
-        }
-        [data-testid="stDownloadButton"] > button:hover {
-            background: #6c63ff15 !important;
-            border-color: #6c63ff !important;
-        }
-
-        /* ── DataFrame ────────────────────────────────────────── */
-        [data-testid="stDataFrame"] {
-            border: 1px solid #1e1e30 !important;
-            border-radius: 10px !important;
-            overflow: hidden !important;
-        }
-
-        /* ── Results card ─────────────────────────────────────── */
-        .result-card {
-            background: #12121c;
-            border: 1px solid #1e1e30;
-            border-left: 3px solid #6c63ff;
-            border-radius: 10px;
-            padding: 1.25rem 1.5rem;
-            margin-top: 1.5rem;
-        }
-        .result-card h3 {
-            font-size: 0.78rem;
-            letter-spacing: 0.18em;
-            color: #6c63ff;
-            font-weight: 600;
-            margin: 0 0 0.6rem;
-        }
-        .result-card p {
-            font-size: 0.82rem;
-            color: #6b6b80;
-            margin: 0;
-        }
-
-        /* ── Metric pills ─────────────────────────────────────── */
-        .metric-row {
-            display: flex;
-            gap: 1rem;
-            margin-top: 1.5rem;
-            margin-bottom: 0.5rem;
-        }
-        .metric-pill {
-            flex: 1;
-            background: #12121c;
-            border: 1px solid #1e1e30;
-            border-radius: 10px;
-            padding: 1rem 1.25rem;
-            text-align: center;
-        }
-        .metric-pill .label {
-            font-size: 0.68rem;
-            letter-spacing: 0.15em;
-            color: #6b6b80;
-            margin-bottom: 0.3rem;
-        }
-        .metric-pill .value {
-            font-size: 1.4rem;
-            font-weight: 700;
-            color: #ffffff;
-        }
-        .metric-pill .value.accent {
-            color: #6c63ff;
-        }
-
-        /* ── Spinner text ─────────────────────────────────────── */
-        [data-testid="stSpinner"] > div {
-            color: #8888a0 !important;
-        }
-
-        /* ── Hide Streamlit menu & footer ─────────────────────── */
-        #MainMenu, footer, [data-testid="stToolbar"] {
-            display: none !important;
-        }
+        [data-testid="stSidebar"] { background-color: #0e0e15 !important; }
+        .brand-header { text-align: center; padding: 2.5rem 0 1rem; }
+        .brand-header h1 { font-family: 'Inter', sans-serif; font-weight: 700; font-size: 2rem; letter-spacing: 0.25em; color: #ffffff; margin: 0; }
+        .brand-header .accent { color: #6c63ff; }
+        .brand-header p { font-weight: 300; font-size: 0.85rem; letter-spacing: 0.15em; color: #6b6b80; margin-top: 0.4rem; }
+        .divider { height: 1px; background: linear-gradient(90deg, transparent, #6c63ff40, transparent); margin: 1.5rem 0 2rem; }
+        [data-testid="stTextInput"] input { background-color: #12121c !important; border: 1px solid #1e1e30 !important; border-radius: 8px !important; color: #e0e0e8 !important; padding: 0.75rem 1rem !important; }
+        [data-testid="stTextInput"] input:focus { border-color: #6c63ff !important; box-shadow: 0 0 0 2px #6c63ff20 !important; }
+        [data-testid="stButton"] > button { background: linear-gradient(135deg, #6c63ff, #4e47c9) !important; color: #ffffff !important; border: none !important; border-radius: 8px !important; padding: 0.65rem 2rem !important; font-weight: 600 !important; width: 100% !important; }
+        [data-testid="stDownloadButton"] > button { background: transparent !important; color: #6c63ff !important; border: 1px solid #6c63ff50 !important; border-radius: 8px !important; width: 100% !important; }
+        [data-testid="stDataFrame"] { border: 1px solid #1e1e30 !important; border-radius: 10px !important; overflow: hidden !important; }
+        .result-card { background: #12121c; border: 1px solid #1e1e30; border-left: 3px solid #6c63ff; border-radius: 10px; padding: 1.25rem 1.5rem; margin-top: 1.5rem; }
+        .result-card h3 { font-size: 0.78rem; letter-spacing: 0.18em; color: #6c63ff; font-weight: 600; margin: 0 0 0.6rem; }
+        .result-card p { font-size: 0.82rem; color: #6b6b80; margin: 0; }
+        .metric-row { display: flex; gap: 1rem; margin-top: 1.5rem; margin-bottom: 0.5rem; }
+        .metric-pill { flex: 1; background: #12121c; border: 1px solid #1e1e30; border-radius: 10px; padding: 1rem 1.25rem; text-align: center; }
+        .metric-pill .label { font-size: 0.68rem; letter-spacing: 0.15em; color: #6b6b80; margin-bottom: 0.3rem; }
+        .metric-pill .value { font-size: 1.4rem; font-weight: 700; color: #ffffff; }
+        .metric-pill .value.accent { color: #6c63ff; }
+        #MainMenu, footer, [data-testid="stToolbar"] { display: none !important; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -725,7 +537,6 @@ def inject_custom_css():
 
 
 def render_header():
-    """Render the branded header."""
     st.markdown(
         """
         <div class="brand-header">
@@ -739,7 +550,6 @@ def render_header():
 
 
 def render_metrics(total_collected: int, qualified: int, audited: int):
-    """Show metric pills summarising the pipeline run."""
     st.markdown(
         f"""
         <div class="metric-row">
@@ -772,28 +582,15 @@ def main():
     inject_custom_css()
     render_header()
 
-    # ── Database connection ───────────────────────────────────────────────────
     conn = init_db()
 
-    # ── Sidebar: Lead Database ────────────────────────────────────────────────
     with st.sidebar:
-        st.markdown(
-            '<h2 style="letter-spacing:0.15em;font-size:1rem;color:#6c63ff;">'
-            'LEAD DATABASE</h2>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            '<p style="font-size:0.78rem;color:#6b6b80;margin-bottom:1rem;">'
-            'Consultez vos leads classés par performance.</p>',
-            unsafe_allow_html=True,
-        )
+        st.markdown('<h2 style="letter-spacing:0.15em;font-size:1rem;color:#6c63ff;">LEAD DATABASE</h2>', unsafe_allow_html=True)
+        st.markdown('<p style="font-size:0.78rem;color:#6b6b80;margin-bottom:1rem;">Consultez vos leads classés par performance.</p>', unsafe_allow_html=True)
 
         table_choice = st.selectbox(
             "Vue",
-            options=[
-                "🎯 Cibles à Contacter (LCP > 4s / Failed)",
-                "⚡ Références Rapides (LCP ≤ 4s)",
-            ],
+            options=["🎯 Cibles à Contacter (LCP > 4s / Failed)", "⚡ Références Rapides (LCP ≤ 4s)"],
             key="db_table_selector",
         )
 
@@ -809,12 +606,10 @@ def main():
                 st.info("Aucun lead dans cette table. Lancez une recherche.")
             else:
                 st.success(f"{len(history_df)} leads dans {selected_table}")
-                st.dataframe(
-                    history_df,
-                    use_container_width=True,
-                    hide_index=True,
-                )
-# ── Input ─────────────────────────────────────────────────────────────────
+                st.dataframe(history_df, use_container_width=True, hide_index=True)
+
+
+    # ── Input & Automation Logic ──────────────────────────────────────────────
     is_cloud_run = os.environ.get("GITHUB_ACTIONS") == "true"
 
     if is_cloud_run:
@@ -830,7 +625,7 @@ def main():
         # Figure out what day of the week it is (0 = Mon, 4 = Fri)
         today = datetime.today().weekday()
         
-        # Select the niche for today (Fallback to Monday if run on weekend)
+        # Select the niche for today (Fallback to Monday if it accidentally runs on a weekend)
         if today <= 4:
             niche = daily_niches[today]
         else:
@@ -838,7 +633,7 @@ def main():
             
         generate = True
     else:
-        # SHOW BUTTON: Standard UI for your laptop
+        # SHOW BUTTON: Standard Streamlit UI for when you run it locally
         niche = st.text_input(
             "Enter target niche (e.g., Promoteur immobilier)",
             placeholder="Architecte d'intérieur",
@@ -861,20 +656,16 @@ def main():
                 return
             total_collected = len(records)
 
-            # Step 2 — Clean & filter (capped at 5)
+            # Step 2 — Clean & filter
             df = clean_and_filter(records)
             if df.empty:
-                st.warning(
-                    "No businesses matched the quality thresholds "
-                    f"(Rating ≥ {MIN_RATING}, Reviews ≥ {MIN_REVIEW_COUNT})."
-                )
+                st.warning(f"No businesses matched the quality thresholds (Rating ≥ {MIN_RATING}, Reviews ≥ {MIN_REVIEW_COUNT}).")
                 return
             qualified_count = len(df)
 
-        # Step 3 — PageSpeed audit (with visible progress)
+        # Step 3 — PageSpeed audit
         st.markdown(
-            '<div class="result-card"><h3>PAGESPEED AUDIT</h3>'
-            "<p>Scanning website performance…</p></div>",
+            '<div class="result-card"><h3>PAGESPEED AUDIT</h3><p>Scanning website performance…</p></div>',
             unsafe_allow_html=True,
         )
         progress_bar = st.progress(0)
@@ -882,109 +673,55 @@ def main():
 
         df = run_audit(df, progress_bar, status_text)
 
-        # Clean up progress widgets
         progress_bar.empty()
         status_text.empty()
 
-        # ── Route leads into target_leads / benchmark_leads ────────────
+        # Route leads into target_leads / benchmark_leads
         route_and_save(df, conn)
 
-        # ── Output: show complete DataFrame ───────────────────────────────
+        # Output
         render_metrics(total_collected, qualified_count, len(df))
+        st.markdown(f'<div class="result-card"><h3>ALL AUDITED LEADS</h3><p>Showing {len(df)} leads for: <strong>{query}</strong></p></div>', unsafe_allow_html=True)
+        st.dataframe(df, use_container_width=True, hide_index=True)
 
-        st.markdown(
-            '<div class="result-card"><h3>ALL AUDITED LEADS</h3>'
-            f"<p>Showing {len(df)} leads for: <strong>{query}</strong></p></div>",
-            unsafe_allow_html=True,
-        )
-
-        st.dataframe(
-            df,
-            use_container_width=True,
-            hide_index=True,
-        )
-
-        # CSV download
         csv = df.to_csv(index=False).encode("utf-8-sig")
-        st.download_button(
-            label="⬇  Download avyr_leads.csv",
-            data=csv,
-            file_name="avyr_leads.csv",
-            mime="text/csv",
-        )
+        st.download_button(label="⬇  Download avyr_leads.csv", data=csv, file_name="avyr_leads.csv", mime="text/csv")
 
         # ══════════════════════════════════════════════════════════════════
         # TROJAN HORSE — AUTO-SORTED CHART PIPELINE
         # ══════════════════════════════════════════════════════════════════
         st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="result-card"><h3>📊 AUDIT VISUEL (TROJAN HORSE)</h3>'
-            '<p>Comparaison automatique : le site le plus lent vs. les concurrents les plus rapides.</p></div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown('<div class="result-card"><h3>📊 AUDIT VISUEL (TROJAN HORSE)</h3><p>Comparaison automatique : le site le plus lent vs. les concurrents les plus rapides.</p></div>', unsafe_allow_html=True)
 
-        # Build a clean copy for the chart: drop Failed / NaN, convert to float
         chart_df = df.copy()
         chart_df = chart_df[chart_df["LCP_Score"] != "Failed"]
         chart_df = chart_df[chart_df["LCP_Score"].notna()]
 
-        # Convert "5.34 s" → 5.34
-        chart_df["LCP_Float"] = (
-            chart_df["LCP_Score"]
-            .str.replace(" s", "", regex=False)
-            .apply(pd.to_numeric, errors="coerce")
-        )
+        chart_df["LCP_Float"] = chart_df["LCP_Score"].str.replace(" s", "", regex=False).apply(pd.to_numeric, errors="coerce")
         chart_df = chart_df.dropna(subset=["LCP_Float"])
-
-        # Sort ascending (fastest first → slowest last)
         chart_df = chart_df.sort_values("LCP_Float", ascending=True).reset_index(drop=True)
 
         if len(chart_df) < 2:
-            st.warning(
-                "Not enough valid LCP data in this batch to generate a "
-                "comparison chart. Check database for failed sites."
-            )
+            st.warning("Not enough valid LCP data in this batch to generate a comparison chart.")
         else:
-            # Target = slowest (last row)
             target_row = chart_df.iloc[-1]
             target_name = target_row["Business_Name"]
             target_lcp = target_row["LCP_Float"]
 
-            # Competitors = up to 3 fastest (first rows)
             comp_df = chart_df.iloc[:-1].head(3)
             comp_names = comp_df["Business_Name"].tolist()
             comp_scores = comp_df["LCP_Float"].tolist()
 
-            fig = generate_audit_chart(
-                target_name=target_name,
-                target_lcp=target_lcp,
-                comp_names=comp_names,
-                comp_scores=comp_scores,
-            )
-
+            fig = generate_audit_chart(target_name, target_lcp, comp_names, comp_scores)
             st.pyplot(fig)
 
-            # Export to in-memory PNG
             buf = io.BytesIO()
-            fig.savefig(
-                buf,
-                format="png",
-                dpi=300,
-                facecolor="#0A0A0A",
-                bbox_inches="tight",
-                pad_inches=0.3,
-            )
+            fig.savefig(buf, format="png", dpi=300, facecolor="#0A0A0A", bbox_inches="tight", pad_inches=0.3)
             buf.seek(0)
             plt.close(fig)
 
             safe_name = target_name.replace(" ", "_")
-            st.download_button(
-                label="⬇  Télécharger le graphique (PNG)",
-                data=buf,
-                file_name=f"audit_{safe_name}.png",
-                mime="image/png",
-            )
-
+            st.download_button(label="⬇  Télécharger le graphique (PNG)", data=buf, file_name=f"audit_{safe_name}.png", mime="image/png")
 
 if __name__ == "__main__":
     main()
