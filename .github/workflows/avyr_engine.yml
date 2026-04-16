@@ -30,7 +30,7 @@ jobs:
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
           SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }} 
           PAGESPEED_API_KEY: ${{ secrets.PAGESPEED_API_KEY }}
-        run: python app.py
+        run: python -u app.py
 
       - name: Run AI Brain (avyr_brain.py)
         env:
