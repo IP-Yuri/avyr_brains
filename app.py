@@ -301,6 +301,7 @@ def main():
     route_and_save(df, conn)
     
     print("\n🚀 SCRAPING COMPLETE. HANDING OFF TO AI BRAIN.")
+    conn.close()
 
 if __name__ == "__main__":
     main()
