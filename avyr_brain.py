@@ -7,6 +7,7 @@ bespoke copy, and pushes the Lead to a Notion database.
 """
 
 import os
+import sys
 import libsql_client
 import json
 import time
@@ -203,3 +204,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    sys.exit(0)
