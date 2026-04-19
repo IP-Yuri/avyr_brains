@@ -190,7 +190,7 @@ def main():
         website_text = scrape_website_context(lead.get("Website", ""))
         
         console.print("  [dim]└─[/dim] Engineering bespoke pitch via Gemini...")
-        time.sleep(10)
+        time.sleep(30)
         pitch_json = draft_pitch(b_name, lead.get("Digital_Status", "UNKNOWN"), website_text)
         
         console.print("  [dim]└─[/dim] Dispatching payload to Notion ecosystem...")
