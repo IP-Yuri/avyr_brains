@@ -259,6 +259,40 @@ def run_audit(df: pd.DataFrame) -> pd.DataFrame:
 # MAIN EXECUTION
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# The Search Variations Dictionary (Mapped to days 0-4 for Mon-Fri)
+NICHE_VARIATIONS = {
+    0: [ # Monday: Finance
+        "Agence financière Casablanca",
+        "Cabinet de comptable et finance Casablanca",
+        "Bureau de finance Casablanca",
+        "Expert financier luxe Casablanca"
+    ],
+    1: [ # Tuesday: Real Estate
+        "Promoteur immobilier Casablanca",
+        "Agence immobilière luxe Casablanca",
+        "Courtier immobilier prestige Casablanca",
+        "Gestion de patrimoine immobilier Casablanca"
+    ],
+    2: [ # Wednesday: Legal
+        "Cabinet d'avocats Casablanca",
+        "Avocat d'affaires Casablanca",
+        "Conseil juridique d'entreprise Casablanca",
+        "Avocat fiscaliste Casablanca"
+    ],
+    3: [ # Thursday: Aesthetics
+        "Clinique esthétique Casablanca",
+        "Centre de médecine esthétique Casablanca",
+        "Chirurgie plastique Casablanca",
+        "Dermatologue esthétique Casablanca"
+    ],
+    4: [ # Friday: Interior Architecture
+        "Architecte d'intérieur Casablanca",
+        "Cabinet d'architecture Casablanca",
+        "Design d'espace luxe Casablanca",
+        "Agence d'aménagement intérieur Casablanca"
+    ]
+}
+
 def main():
     print("=======================================")
     print("⚡ AVYR DIGITAL LEAD ENGINE (HEADLESS) ⚡")
@@ -267,41 +301,53 @@ def main():
     conn = init_db()
     print("✅ Database connected successfully.")
 
-    daily_niches = [
-        "Agence financière",       # Mon
-        "Promoteur immobilier",    # Tue
-        "Cabinet d'avocats",       # Wed
-        "Clinique esthétique",     # Thu
-        "Architecte d'intérieur"   # Fri
-    ]
-    
     today = datetime.today().weekday()
-    niche = daily_niches[today] if today <= 4 else daily_niches[0]
-    query = f"{niche} Casablanca, Morocco"
+    active_day = today if today <= 4 else 0  # Fallback to Monday if it's the weekend
     
-    print(f"🎯 Target Niche for Today: {query}\n")
-    
-    print("1️⃣ Collecting leads via SerpApi...")
-    records = collect_leads(query)
-    if not records:
-        print("❌ No records found. Exiting.")
-        return
+    variations_to_hunt = NICHE_VARIATIONS[active_day]
+    REQUIRED_LEADS = 7
+    new_leads_inserted = 0
+
+    print(f"🎯 Target Quota: {REQUIRED_LEADS} fresh, non-duplicate leads.")
+
+    # The Hunting Loop
+    for query in variations_to_hunt:
+        if new_leads_inserted >= REQUIRED_LEADS:
+            break # Quota met, completely exit the search loop
+
+        print(f"\n🔍 Executing sweep for variation: '{query}'")
         
-    df = clean_and_filter(records)
-    print(f"✅ Filtered down to {len(df)} highly qualified leads.\n")
-    
-    if df.empty:
-        print("❌ No leads met the criteria. Exiting.")
-        return
+        # ----------------------------------------------------------------------
+        # -> PASTE YOUR SERPAPI SEARCH CALL HERE using the 'query' variable
+        # -> Example: results = get_google_maps_results(query)
+        # ----------------------------------------------------------------------
+        
+        results = [] # (Replace this with your actual results list)
 
-    print("2️⃣ Beginning deep digital audit...")
-    df = run_audit(df)
-    
-    print("\n3️⃣ Routing and saving to Turso...")
-    route_and_save(df, conn)
-    
-    print("\n🚀 SCRAPING COMPLETE. HANDING OFF TO AI BRAIN.")
-    conn.close()
+        for lead in results:
+            if new_leads_inserted >= REQUIRED_LEADS:
+                break # Stop processing leads if we hit 7
+            
+            # --- THE DUPLICATE SHIELD ---
+            # Ask Turso if it has ever seen this exact website before
+            website_url = lead.get("Website", "")
+            
+            if website_url == "" or website_url == "Not Found":
+                continue # Skip leads with no website (AVYR targets digital architecture)
+                
+            existing_count = conn.execute(
+                "SELECT COUNT(*) FROM target_leads WHERE Website = ?", 
+                [website_url]
+            ).rows[0][0]
+            
+            if existing_count > 0:
+                print(f"⚠️ Duplicate detected. Skipping: {lead.get('Business_Name')}")
+            else:
+                # ----------------------------------------------------------------
+                # -> PASTE YOUR PAGE-SPEED AND DATABASE INSERTION CODE HERE
+                # ----------------------------------------------------------------
+                
+                new_leads_inserted += 1
+                print(f"✅ [Fresh Lead {new_leads_inserted}/{REQUIRED_LEADS}] Secured: {lead.get('Business_Name')}")
 
-if __name__ == "__main__":
-    main()
+    print(f"\n🏁 Scraper shutting down. Handing off {new_leads_inserted} pristine leads to AVYR Brain.")
