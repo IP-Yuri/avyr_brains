@@ -319,4 +319,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    sys.exit(0)
+    os.exit(0)
