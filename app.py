@@ -5,6 +5,7 @@ Headless automation script for scheduled GitHub Actions.
 """
 
 import os
+import sys
 from dotenv import load_dotenv
 load_dotenv()
 import re
@@ -318,3 +319,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    sys.exit(0)
