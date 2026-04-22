@@ -27,7 +27,7 @@ PAGESPEED_ENDPOINT = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed
 
 MIN_RATING = 4.5
 MIN_REVIEW_COUNT = 30
-MAX_LEADS = 7
+REQUIRED_LEADS = 7
 REQUEST_DELAY = 2
 LCP_THRESHOLD = 4.0
 
@@ -108,7 +108,6 @@ def route_and_save(df: pd.DataFrame, client) -> None:
 
     insert_df("target_leads", targets)
     insert_df("benchmark_leads", benchmarks)
-    print(f"💾 Saved {len(targets)} targets and {len(benchmarks)} benchmarks to Turso.")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PIPELINE FUNCTIONS
@@ -137,16 +136,6 @@ def collect_leads(query: str) -> list[dict]:
         except Exception:
             continue
     return records
-
-def clean_and_filter(records: list[dict]) -> pd.DataFrame:
-    df = pd.DataFrame(records)
-    df["Website"] = df["Website"].fillna("").astype(str).str.strip()
-    df["Website"] = df["Website"].replace(["None", "nan", "NaN"], "")
-    df["Rating"] = pd.to_numeric(df["Rating"], errors="coerce")
-    df["Reviews"] = pd.to_numeric(df["Reviews"], errors="coerce").fillna(0).astype(int)
-    
-    df = df[(df["Rating"] >= MIN_RATING) & (df["Reviews"] >= MIN_REVIEW_COUNT)]
-    return df.head(MAX_LEADS).reset_index(drop=True)
 
 def fetch_lcp(url: str) -> str:
     if not url.startswith(("http://", "https://")):
@@ -214,85 +203,42 @@ def extract_email(business_name: str, url: str) -> str | None:
         except: pass
     return "Not Found"
 
-def find_instagram_only(business_name: str) -> str | None:
-    try:
-        resp = requests.get(SERPAPI_ENDPOINT, params={"engine": "google", "q": f'site:instagram.com "{business_name}"', "api_key": SERPAPI_KEY}, timeout=10)
-        if org := resp.json().get("organic_results", []): return org[0].get("link")
-    except: pass
-    return None
-
-def run_audit(df: pd.DataFrame) -> pd.DataFrame:
-    total = len(df)
-    scores, digital_statuses, emails, ig_urls = [], [], [], []
-
-    for idx, (url, b_name) in enumerate(zip(df["Website"], df["Business_Name"])):
-        print(f"\n🔄 Auditing [{idx + 1}/{total}]: {b_name}")
-        
-        if url:
-            score = fetch_lcp(url)
-            print(f"   -> PageSpeed Score: {score}")
-            flaw_data = inspect_digital_flaws(url)
-            d_status, ig = flaw_data["Digital_Status"], flaw_data["Instagram_URL"]
-        else:
-            score, d_status = "N/A", "IG_ONLY"
-            print(f"   -> Ghost Business (No Website)")
-            ig = find_instagram_only(b_name)
-            
-        print(f"   -> Extracting contact info...")
-        email = extract_email(b_name, url)
-            
-        scores.append(score)
-        digital_statuses.append(d_status)
-        emails.append(email)
-        ig_urls.append(ig)
-        
-        if idx < total - 1: time.sleep(REQUEST_DELAY)
-
-    df = df.copy()
-    df["LCP_Score"] = scores
-    df["Digital_Status"] = digital_statuses
-    df["Email"] = emails
-    df["Instagram_URL"] = ig_urls
-    return df
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN EXECUTION
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# The Search Variations Dictionary (Mapped to days 0-4 for Mon-Fri)
 NICHE_VARIATIONS = {
-    0: [ # Monday: Finance
-        "Agence financière Casablanca",
+    0: [ # Monday: Corporate & Wealth (Finance + Legal)
         "Cabinet de comptable et finance Casablanca",
-        "Bureau de finance Casablanca",
-        "Expert financier luxe Casablanca"
+        "Cabinet d'avocats affaires Casablanca",
+        "Expert financier luxe Casablanca",
+        "Conseil juridique d'entreprise Casablanca"
     ],
-    1: [ # Tuesday: Real Estate
-        "Promoteur immobilier Casablanca",
-        "Agence immobilière luxe Casablanca",
-        "Courtier immobilier prestige Casablanca",
-        "Gestion de patrimoine immobilier Casablanca"
+    1: [ # Tuesday: Properties & Spaces (Real Estate + Architecture)
+        "Promoteur immobilier luxe Casablanca",
+        "Architecte d'intérieur Casablanca",
+        "Agence immobilière prestige Casablanca",
+        "Design d'espace luxe Casablanca"
     ],
-    2: [ # Wednesday: Legal
-        "Cabinet d'avocats Casablanca",
-        "Avocat d'affaires Casablanca",
-        "Conseil juridique d'entreprise Casablanca",
-        "Avocat fiscaliste Casablanca"
-    ],
-    3: [ # Thursday: Aesthetics
+    2: [ # Wednesday: Aesthetics & Clinical Precision
         "Clinique esthétique Casablanca",
-        "Centre de médecine esthétique Casablanca",
         "Chirurgie plastique Casablanca",
+        "Centre de médecine esthétique Casablanca",
         "Dermatologue esthétique Casablanca"
     ],
-    4: [ # Friday: Interior Architecture
-        "Architecte d'intérieur Casablanca",
-        "Cabinet d'architecture Casablanca",
-        "Design d'espace luxe Casablanca",
-        "Agence d'aménagement intérieur Casablanca"
+    3: [ # Thursday: Curation & Retail
+        "Concept store luxe Casablanca",
+        "Boutique de créateur Casablanca",
+        "Horlogerie de luxe Casablanca",
+        "Joaillerie prestige Casablanca"
+    ],
+    4: [ # Friday: Gastronomy & Experiences
+        "Restaurant gastronomique Casablanca",
+        "Haute cuisine Casablanca",
+        "Lounge prestige Casablanca",
+        "Chef privé Casablanca"
     ]
 }
-
 def main():
     print("=======================================")
     print("⚡ AVYR DIGITAL LEAD ENGINE (HEADLESS) ⚡")
@@ -302,39 +248,39 @@ def main():
     print("✅ Database connected successfully.")
 
     today = datetime.today().weekday()
-    active_day = today if today <= 4 else 0  # Fallback to Monday if it's the weekend
-    
-    variations_to_hunt = NICHE_VARIATIONS[active_day]
-    REQUIRED_LEADS = 7
+    variations_to_hunt = NICHE_VARIATIONS.get(today, NICHE_VARIATIONS[0])
     new_leads_inserted = 0
 
     print(f"🎯 Target Quota: {REQUIRED_LEADS} fresh, non-duplicate leads.")
 
-    # The Hunting Loop
     for query in variations_to_hunt:
         if new_leads_inserted >= REQUIRED_LEADS:
-            break # Quota met, completely exit the search loop
+            break 
 
         print(f"\n🔍 Executing sweep for variation: '{query}'")
+        raw_leads = collect_leads(query)
         
-        # ----------------------------------------------------------------------
-        # -> PASTE YOUR SERPAPI SEARCH CALL HERE using the 'query' variable
-        # -> Example: results = get_google_maps_results(query)
-        # ----------------------------------------------------------------------
-        
-        results = [] # (Replace this with your actual results list)
+        if not raw_leads:
+            continue
 
-        for lead in results:
+        # Basic filtering for reviews/ratings
+        df = pd.DataFrame(raw_leads)
+        df["Website"] = df["Website"].fillna("").astype(str).str.strip()
+        df["Website"] = df["Website"].replace(["None", "nan", "NaN"], "")
+        df["Rating"] = pd.to_numeric(df["Rating"], errors="coerce")
+        df["Reviews"] = pd.to_numeric(df["Reviews"], errors="coerce").fillna(0).astype(int)
+        
+        valid_leads = df[(df["Rating"] >= MIN_RATING) & (df["Reviews"] >= MIN_REVIEW_COUNT)].to_dict('records')
+
+        for lead in valid_leads:
             if new_leads_inserted >= REQUIRED_LEADS:
-                break # Stop processing leads if we hit 7
+                break 
             
-            # --- THE DUPLICATE SHIELD ---
-            # Ask Turso if it has ever seen this exact website before
             website_url = lead.get("Website", "")
-            
             if website_url == "" or website_url == "Not Found":
-                continue # Skip leads with no website (AVYR targets digital architecture)
+                continue 
                 
+            # --- THE DUPLICATE SHIELD ---
             existing_count = conn.execute(
                 "SELECT COUNT(*) FROM target_leads WHERE Website = ?", 
                 [website_url]
@@ -342,12 +288,33 @@ def main():
             
             if existing_count > 0:
                 print(f"⚠️ Duplicate detected. Skipping: {lead.get('Business_Name')}")
-            else:
-                # ----------------------------------------------------------------
-                # -> PASTE YOUR PAGE-SPEED AND DATABASE INSERTION CODE HERE
-                # ----------------------------------------------------------------
+                continue
                 
-                new_leads_inserted += 1
-                print(f"✅ [Fresh Lead {new_leads_inserted}/{REQUIRED_LEADS}] Secured: {lead.get('Business_Name')}")
+            # --- THE AUDIT (Only runs on fresh leads) ---
+            b_name = lead.get('Business_Name')
+            print(f"\n🔄 Auditing: {b_name}")
+            
+            score = fetch_lcp(website_url)
+            print(f"   -> PageSpeed Score: {score}")
+            
+            flaw_data = inspect_digital_flaws(website_url)
+            print(f"   -> Extracting contact info...")
+            email = extract_email(b_name, website_url)
+            
+            # Pack the audited data into the lead dictionary
+            lead["LCP_Score"] = score
+            lead["Digital_Status"] = flaw_data["Digital_Status"]
+            lead["Email"] = email
+            lead["Instagram_URL"] = flaw_data["Instagram_URL"]
+            
+            # Save the single lead to Turso
+            route_and_save(pd.DataFrame([lead]), conn)
+            
+            new_leads_inserted += 1
+            print(f"✅ [Fresh Lead {new_leads_inserted}/{REQUIRED_LEADS}] Secured: {b_name}")
+            time.sleep(REQUEST_DELAY)
 
-    print(f"\n🏁 Scraper shutting down. Handing off {new_leads_inserted} pristine leads to AVYR Brain.")
+    print(f"\n🏁 Scraper shutting down. Handed off {new_leads_inserted} pristine leads to AVYR Brain.")
+
+if __name__ == "__main__":
+    main()
