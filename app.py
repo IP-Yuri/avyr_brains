@@ -176,13 +176,15 @@ def inspect_digital_flaws(url: str) -> dict:
     return result
 
 def extract_email(business_name: str, url: str) -> str | None:
-    def _is_valid(e): return not e.lower().endswith(('.png', '.jpg', '.css', '.js')) and "example@" not in e.lower()
+    def _is_valid(e): return not e.lower().endswith(('.png', '.jpg', '.css', '.js', '.webp')) and "example@" not in e.lower()
     def _find_in_html(html):
         soup = BeautifulSoup(html, "html.parser")
+        # 1. Check mailto: links
         for a in soup.find_all("a", href=True):
             if a["href"].startswith("mailto:"):
                 e = a["href"].replace("mailto:", "").split("?")[0].strip()
                 if _is_valid(e): return e
+        # 2. Check raw text via Regex
         for e in re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', soup.get_text()):
             if _is_valid(e): return e
         return None
@@ -192,11 +194,14 @@ def extract_email(business_name: str, url: str) -> str | None:
         try:
             import warnings
             warnings.filterwarnings('ignore')
-            h = {"User-Agent": "Mozilla/5.0"}
-            resp = requests.get(url, headers=h, timeout=5, verify=False)
+            # Added a more robust User-Agent so luxury sites don't block us
+            h = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            resp = requests.get(url, headers=h, timeout=8, verify=False)
             if email := _find_in_html(resp.text): return email
             
-            for path in ["/contact", "/contact-us"]:
+            # 🇲🇦 THE CASABLANCA UPGRADE: Check French & Common contact paths
+            paths_to_check = ["/contact", "/contactez-nous", "/nous-contacter", "/a-propos", "/contact-us"]
+            for path in paths_to_check:
                 try:
                     c_resp = requests.get(url.rstrip("/") + path, headers=h, timeout=5, verify=False)
                     if email := _find_in_html(c_resp.text): return email
