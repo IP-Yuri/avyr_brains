@@ -152,17 +152,28 @@ def push_to_notion(lead_data: dict, pitch_data: dict) -> bool:
         "Notion-Version": "2022-06-28"
     }
     
+    # Check if we have a valid email
+    has_email = lead_data.get("Email") and lead_data.get("Email") != "Not Found"
+    action_tag = "Email Ready" if has_email else "IG DM Required"
+    
     payload = {
         "parent": {"database_id": NOTION_DATABASE_ID},
         "properties": {
             "Business Name": {"title": [{"text": {"content": lead_data.get("Business_Name", "")}}]},
             "Digital Flaw": {"select": {"name": lead_data.get("Digital_Status", "UNKNOWN")}},
-            "Status": {"status": {"name": "📥 Drafted"}}
+            "Status": {"status": {"name": "📥 Drafted"}},
+            "Action Required": {"select": {"name": action_tag}}
         }
     }
     
-    if email := lead_data.get("Email"):
-        if email != "Not Found": payload["properties"]["Contact Email"] = {"email": email}
+    if has_email:
+        payload["properties"]["Contact Email"] = {"email": lead_data.get("Email")}
+        
+    # Push the scraped Instagram URL into Notion
+    if ig_url := lead_data.get("Instagram_URL"):
+        if ig_url != "Not Found" and ig_url is not None:
+            payload["properties"]["Instagram URL"] = {"url": ig_url}
+            
     if subject := pitch_data.get("subject"):
         payload["properties"]["Drafted Subject Line"] = {"rich_text": [{"text": {"content": subject}}]}
     if body := pitch_data.get("body"):
@@ -179,7 +190,6 @@ def push_to_notion(lead_data: dict, pitch_data: dict) -> bool:
         if hasattr(e, 'response') and e.response is not None:
              console.print(f"[bold red]Details:[/bold red] {e.response.text}")
         return False
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN LOOP
 # ═══════════════════════════════════════════════════════════════════════════════
