@@ -81,10 +81,10 @@ def scrape_website_context(url: str) -> str:
 # GEMINI COPYWRITER
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def draft_pitch(business_name: str, digital_status: str, website_text: str) -> dict:
+def draft_pitch(business_name: str, digital_status: str, website_text: str) -> dict | None:
     if not GEMINI_API_KEY:
         console.print("[bold red]❌ GEMINI_API_KEY not found.[/bold red]")
-        return {"subject": "Error", "body": "Missing API Key", "ig_dm": "Missing API Key"}
+        return None
         
     client = genai.Client(api_key=GEMINI_API_KEY)
     
@@ -134,7 +134,8 @@ def draft_pitch(business_name: str, digital_status: str, website_text: str) -> d
         return json.loads(response.text)
     except Exception as e:
          console.print(f"[bold red]❌ Gemini API Error:[/bold red] {e}")
-         return {"subject": "Digital Architecture Review", "body": "AI error.", "ig_dm": "AI error."}
+         # THE SAFETY SHIELD: We return None so the main loop knows to abort the Notion push
+         return None
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # NOTION DISPATCHER
@@ -217,6 +218,12 @@ def main():
         console.print("  [dim]└─[/dim] Engineering bespoke pitch via Gemini...")
         time.sleep(30)
         pitch_json = draft_pitch(b_name, lead.get("Digital_Status", "UNKNOWN"), website_text)
+        
+        # --- THE SAFETY SHIELD ---
+        if not pitch_json:
+            console.print("  [dim]└─[/dim] [bold yellow]⚠️ AI Server busy. Aborting push. Turso lead preserved for next run.[/bold yellow]\n")
+            continue 
+        # -------------------------
         
         console.print("  [dim]└─[/dim] Dispatching payload to Notion ecosystem...")
         success = push_to_notion(lead, pitch_json)
