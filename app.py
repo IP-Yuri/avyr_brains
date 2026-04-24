@@ -283,41 +283,57 @@ def main():
                 break 
             
             website_url = lead.get("Website", "")
-            if website_url == "" or website_url == "Not Found":
-                continue 
+            b_name = lead.get('Business_Name')
                 
-            # --- THE DUPLICATE SHIELD ---
+            # --- THE DUPLICATE SHIELD (Upgraded to check Name instead of URL) ---
             existing_count = conn.execute(
-                "SELECT COUNT(*) FROM target_leads WHERE Website = ?", 
-                [website_url]
+                "SELECT COUNT(*) FROM target_leads WHERE Business_Name = ?", 
+                [b_name]
             ).rows[0][0]
             
             if existing_count > 0:
-                print(f"⚠️ Duplicate detected. Skipping: {lead.get('Business_Name')}")
+                print(f"⚠️ Duplicate detected. Skipping: {b_name}")
                 continue
                 
-            # --- THE AUDIT (Only runs on fresh leads) ---
-            b_name = lead.get('Business_Name')
+            # --- THE GHOST PROTOCOL & PRESTIGE LEAK FILTER ---
             print(f"\n🔄 Auditing: {b_name}")
+
+            if website_url == "" or website_url == "Not Found":
+                print(f"   -> 👻 Ghost Business detected (No Website). Perfect target.")
+                lead["LCP_Score"] = "N/A"
+                lead["Digital_Status"] = "IG_ONLY"
+                lead["Email"] = "Not Found"
+                lead["Instagram_URL"] = None # Tagged for manual IG DM in Notion
+            else:
+                score = fetch_lcp(website_url)
+                print(f"   -> PageSpeed Score: {score}")
+                
+                flaw_data = inspect_digital_flaws(website_url)
+                
+                # Parse the PageSpeed score to a number for the bouncer check
+                try:
+                    lcp_float = float(score.replace(" s", ""))
+                except:
+                    lcp_float = 9.9 # If the speed test failed, the site is broken (Good target)
+                
+                # THE BOUNCER LOGIC: Reject sites that are already perfect
+                if flaw_data["Digital_Status"] == "CUSTOM_MODERN" and lcp_float < 3.0:
+                    print(f"   -> ❌ Rejecting: Digital architecture is already too good.")
+                    continue # Skip this lead! Do not count it towards the 7.
+
+                print(f"   -> Extracting contact info...")
+                email = extract_email(b_name, website_url)
+                
+                lead["LCP_Score"] = score
+                lead["Digital_Status"] = flaw_data["Digital_Status"]
+                lead["Email"] = email
+                lead["Instagram_URL"] = flaw_data["Instagram_URL"]
             
-            score = fetch_lcp(website_url)
-            print(f"   -> PageSpeed Score: {score}")
-            
-            flaw_data = inspect_digital_flaws(website_url)
-            print(f"   -> Extracting contact info...")
-            email = extract_email(b_name, website_url)
-            
-            # Pack the audited data into the lead dictionary
-            lead["LCP_Score"] = score
-            lead["Digital_Status"] = flaw_data["Digital_Status"]
-            lead["Email"] = email
-            lead["Instagram_URL"] = flaw_data["Instagram_URL"]
-            
-            # Save the single lead to Turso
+            # Save the single qualified lead to Turso
             route_and_save(pd.DataFrame([lead]), conn)
             
             new_leads_inserted += 1
-            print(f"✅ [Fresh Lead {new_leads_inserted}/{REQUIRED_LEADS}] Secured: {b_name}")
+            print(f"✅ [Fresh Target {new_leads_inserted}/{REQUIRED_LEADS}] Secured: {b_name}")
             time.sleep(REQUEST_DELAY)
 
     print(f"\n🏁 Scraper shutting down. Handed off {new_leads_inserted} pristine leads to AVYR Brain.")
